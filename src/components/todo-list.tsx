@@ -1,54 +1,101 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Plus, Pencil, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-
-type Todo = {
-  id: number
-  text: string
-}
+import { subscribeTodos, addTodo, updateTodo, deleteTodo } from "@/lib/firebase"
+import type { Todo } from "@/lib/types"
 
 export function TodoList() {
   const [todos, setTodos] = useState<Todo[]>([])
   const [newTodo, setNewTodo] = useState("")
-  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
-  const addTodo = () => {
-    if (newTodo.trim() !== "") {
-      setTodos([...todos, { id: Date.now(), text: newTodo }])
-      setNewTodo("")
+  useEffect(() => {
+    console.log('Setting up Firebase subscription...');
+    const unsubscribe = subscribeTodos((updatedTodos) => {
+      console.log('Received todos update:', updatedTodos);
+      setTodos(updatedTodos);
+    });
+
+    return () => {
+      console.log('Cleaning up Firebase subscription...');
+      unsubscribe();
+    };
+  }, []);
+
+  const handleAddTodo = async () => {
+    if (newTodo.trim() === "") return;
+    
+    setIsLoading(true);
+    setError(null);
+    try {
+      await addTodo(newTodo);
+      setNewTodo("");
+    } catch (err) {
+      setError('Error al agregar la tarea. Por favor intenta de nuevo.');
+      console.error("Error adding todo:", err);
+    } finally {
+      setIsLoading(false);
     }
   }
 
-  const updateTodo = (id: number, newText: string) => {
-    setTodos(todos.map(todo => todo.id === id ? { ...todo, text: newText } : todo))
-    setEditingId(null)
+  const handleUpdateTodo = async (id: string, newText: string) => {
+    if (newText.trim() === "") return;
+    
+    setIsLoading(true);
+    setError(null);
+    try {
+      await updateTodo(id, newText);
+      setEditingId(null);
+    } catch (err) {
+      setError('Error al actualizar la tarea. Por favor intenta de nuevo.');
+      console.error("Error updating todo:", err);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
-  const deleteTodo = (id: number) => {
-    setTodos(todos.filter(todo => todo.id !== id))
+  const handleDeleteTodo = async (id: string) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      await deleteTodo(id);
+    } catch (err) {
+      setError('Error al eliminar la tarea. Por favor intenta de nuevo.');
+      console.error("Error deleting todo:", err);
+    } finally {
+      setIsLoading(false);
+    }
   }
 
   return (
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
-        <CardTitle className="text-2xl font-bold text-center">Todo List</CardTitle>
+        <CardTitle className="text-2xl font-bold text-center">Lista de Tareas</CardTitle>
       </CardHeader>
       <CardContent>
+        {error && (
+          <div className="mb-4 p-2 text-sm text-red-500 bg-red-50 rounded">
+            {error}
+          </div>
+        )}
         <div className="flex space-x-2 mb-4">
           <Input
             type="text"
-            placeholder="Add a new task"
+            placeholder="Agregar nueva tarea"
             value={newTodo}
             onChange={(e) => setNewTodo(e.target.value)}
-            onKeyPress={(e) => e.key === "Enter" && addTodo()}
+            onKeyPress={(e) => e.key === "Enter" && handleAddTodo()}
+            disabled={isLoading}
           />
-          <Button onClick={addTodo}>
+          <Button onClick={handleAddTodo} disabled={isLoading}>
             <Plus className="w-4 h-4 mr-2" />
-            Add
+            Agregar
           </Button>
         </div>
         <ul className="space-y-2">
@@ -57,22 +104,22 @@ export function TodoList() {
               {editingId === todo.id ? (
                 <Input
                   type="text"
-                  value={todo.text}
-                  onChange={(e) => updateTodo(todo.id, e.target.value)}
-                  onBlur={() => setEditingId(null)}
-                  onKeyPress={(e) => e.key === "Enter" && updateTodo(todo.id, e.target.value)}
+                  defaultValue={todo.text}
+                  onBlur={(e) => handleUpdateTodo(todo.id, e.target.value)}
+                  onKeyPress={(e) => e.key === "Enter" && handleUpdateTodo(todo.id, e.currentTarget.value)}
+                  disabled={isLoading}
                   autoFocus
                 />
               ) : (
                 <>
                   <span className="flex-grow">{todo.text}</span>
-                  <Button size="icon" variant="outline" onClick={() => setEditingId(todo.id)}>
+                  <Button size="icon" variant="outline" onClick={() => setEditingId(todo.id)} disabled={isLoading}>
                     <Pencil className="w-4 h-4" />
-                    <span className="sr-only">Edit</span>
+                    <span className="sr-only">Editar</span>
                   </Button>
-                  <Button size="icon" variant="outline" onClick={() => deleteTodo(todo.id)}>
+                  <Button size="icon" variant="outline" onClick={() => handleDeleteTodo(todo.id)} disabled={isLoading}>
                     <Trash2 className="w-4 h-4" />
-                    <span className="sr-only">Delete</span>
+                    <span className="sr-only">Eliminar</span>
                   </Button>
                 </>
               )}
@@ -81,7 +128,7 @@ export function TodoList() {
         </ul>
       </CardContent>
       <CardFooter className="text-center text-sm text-muted-foreground">
-        © 2023 Todo List App. All rights reserved.
+        {todos.length === 0 ? 'No hay tareas pendientes' : `${todos.length} tareas en total`}
       </CardFooter>
     </Card>
   )
